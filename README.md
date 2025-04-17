@@ -38,7 +38,7 @@ A full-featured Netflix clone built with Next.js, TypeScript, Tailwind CSS, and 
 
 1. Clone the repository:
 \`\`\`bash
-git clone https://github.com/yourusername/netclicks.git
+git clone https://github.com/prajesh-dutta/Netclicks.git
 cd netclicks
 \`\`\`
 
@@ -70,22 +70,10 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Deployment
-
-This project can be easily deployed to Vercel:
-
-\`\`\`bash
-npm install -g vercel
-vercel
-\`\`\`
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
 
