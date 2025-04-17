@@ -78,7 +78,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Acknowledgements
 
 - Design inspired by Netflix
-- Created with ❤️ by [Your Name]
+- Created with ❤️ by Prajesh
 \`\`\`
-
-Finally, let's update the next.config.mjs file to ensure proper image loading:
