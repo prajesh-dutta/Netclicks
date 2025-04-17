@@ -7,6 +7,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  output: 'standalone', // Add this for Docker compatibility
   images: {
     domains: [
       'placeholder.com',
@@ -39,6 +40,14 @@ const nextConfig = {
       }
     }
     return config
+  },
+  // Support for Digital Ocean environment
+  serverRuntimeConfig: {
+    PROJECT_ROOT: process.cwd(),
+  },
+  publicRuntimeConfig: {
+    // Will be available on both server and client
+    staticFolder: '/static',
   },
 }
 

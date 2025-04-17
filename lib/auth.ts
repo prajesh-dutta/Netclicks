@@ -7,9 +7,24 @@ import bcrypt from "bcryptjs"
 import clientPromise from "@/lib/mongodb"
 import { connectToDatabase } from "@/lib/mongodb"
 
-// Get base URL from environment or default to localhost in development
-const baseUrl = process.env.NEXTAUTH_URL || 
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+// Determine the base URL dynamically from available environment variables
+const getBaseUrl = () => {
+  // For Digital Ocean deployment
+  if (process.env.DIGITAL_OCEAN_URL) {
+    return process.env.DIGITAL_OCEAN_URL
+  }
+  
+  // For Vercel or other cloud providers
+  if (process.env.NEXTAUTH_URL) {
+    return process.env.NEXTAUTH_URL
+  }
+  
+  // Fallback for local development
+  return "http://localhost:3000"
+}
+
+// Dynamically generated base URL
+const baseUrl = getBaseUrl()
 
 export const {
   handlers: { GET, POST },
@@ -22,10 +37,14 @@ export const {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      // Allow callbacks to be dynamic
+      allowDangerousEmailAccountLinking: true,
     }),
     GithubProvider({
       clientId: process.env.GITHUB_CLIENT_ID || "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET || "",
+      // Allow callbacks to be dynamic
+      allowDangerousEmailAccountLinking: true,
     }),
     // Add credentials sign in option
     CredentialsProvider({
@@ -84,21 +103,47 @@ export const {
       }
       return token
     },
-    // Add redirect callback to fix OAuth callback issues for Vercel deployment
+    // Enhanced redirect callback with Digital Ocean support
     async redirect({ url, baseUrl }) {
-      // Allows relative callback URLs
-      if (url.startsWith("/")) return `${baseUrl}${url}`
-      // Allows callback URLs on the same origin
-      else if (new URL(url).origin === baseUrl) return url
-      // Allow Vercel preview URLs
-      else if (process.env.VERCEL_URL && url.startsWith(`https://${process.env.VERCEL_URL}`)) return url
+      // Log for debugging
+      console.log(`Redirect requested to: ${url}`)
+      console.log(`Base URL detected as: ${baseUrl}`)
+      
+      // Handle relative URLs
+      if (url.startsWith('/')) {
+        const redirectUrl = `${baseUrl}${url}`
+        console.log(`Redirecting to relative path: ${redirectUrl}`)
+        return redirectUrl
+      }
+      
+      // Handle URLs on the same origin
+      try {
+        const urlOrigin = new URL(url).origin
+        if (urlOrigin === baseUrl) {
+          console.log(`Redirecting to same origin: ${url}`)
+          return url
+        }
+        
+        // Handle Digital Ocean URLs
+        if (process.env.DIGITAL_OCEAN_URL && url.includes(process.env.DIGITAL_OCEAN_URL.replace(/https?:\/\//, ''))) {
+          console.log(`Redirecting to Digital Ocean URL: ${url}`)
+          return url
+        }
+      } catch (error) {
+        console.error("Error parsing URL:", error)
+      }
+      
+      // Fallback to base URL
+      console.log(`Falling back to base URL: ${baseUrl}`)
       return baseUrl
     }
   },
   pages: {
     signIn: "/auth/signin",
     signUp: "/auth/signup",
-    error: "/auth/error", // Add error page
+    error: "/auth/error",
   },
   debug: process.env.NODE_ENV === "development",
+  // Use the dynamically determined base URL
+  trustHost: true,
 })
