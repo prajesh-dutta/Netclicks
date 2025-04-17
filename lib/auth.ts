@@ -7,6 +7,10 @@ import bcrypt from "bcryptjs"
 import clientPromise from "@/lib/mongodb"
 import { connectToDatabase } from "@/lib/mongodb"
 
+// Get base URL from environment or default to localhost in development
+const baseUrl = process.env.NEXTAUTH_URL || 
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+
 export const {
   handlers: { GET, POST },
   auth,
@@ -80,12 +84,14 @@ export const {
       }
       return token
     },
-    // Add redirect callback to fix OAuth callback issues
+    // Add redirect callback to fix OAuth callback issues for Vercel deployment
     async redirect({ url, baseUrl }) {
       // Allows relative callback URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`
       // Allows callback URLs on the same origin
       else if (new URL(url).origin === baseUrl) return url
+      // Allow Vercel preview URLs
+      else if (process.env.VERCEL_URL && url.startsWith(`https://${process.env.VERCEL_URL}`)) return url
       return baseUrl
     }
   },
@@ -94,4 +100,5 @@ export const {
     signUp: "/auth/signup",
     error: "/auth/error", // Add error page
   },
+  debug: process.env.NODE_ENV === "development",
 })

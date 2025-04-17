@@ -1,170 +1,143 @@
 import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
 import { connectToDatabase } from "@/lib/mongodb"
-import { ObjectId } from "mongodb"
+import { getServerSession } from "next-auth"
+import { auth } from "@/lib/auth"
+
+// Fallback profiles in case database connection fails
+const fallbackProfiles = [
+  {
+    id: "profile-1",
+    name: "Main Profile",
+    avatar: "/placeholder-user.jpg",
+    isKid: false,
+  },
+  {
+    id: "profile-2",
+    name: "Kids",
+    avatar: "/placeholder-user.jpg",
+    isKid: true,
+  },
+]
 
 export async function GET() {
   try {
-    const session = await getServerSession()
+    // Get current user session
+    const session = await auth()
 
     if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in to access profiles." },
+        { status: 401 }
+      )
     }
 
-    const { db } = await connectToDatabase()
+    try {
+      const { db } = await connectToDatabase()
 
-    const user = await db.collection("users").findOne({
-      email: session.user.email,
-    })
+      // Find profiles associated with the user's email
+      const profiles = await db
+        .collection("profiles")
+        .find({ userId: session.user.id })
+        .toArray()
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      if (profiles && profiles.length > 0) {
+        return NextResponse.json({ profiles })
+      }
+
+      // If no profiles found, create default ones
+      const defaultProfiles = [
+        {
+          userId: session.user.id,
+          name: session.user.name || "Main Profile",
+          avatar: session.user.image || "/placeholder-user.jpg",
+          isKid: false,
+          createdAt: new Date(),
+        },
+        {
+          userId: session.user.id,
+          name: "Kids",
+          avatar: "/placeholder-user.jpg",
+          isKid: true,
+          createdAt: new Date(),
+        },
+      ]
+
+      // Insert default profiles
+      await db.collection("profiles").insertMany(defaultProfiles)
+
+      return NextResponse.json({ profiles: defaultProfiles })
+    } catch (dbError) {
+      console.error("Database error:", dbError)
+      // Return fallback profiles
+      return NextResponse.json({
+        profiles: fallbackProfiles,
+        fallback: true,
+      })
     }
-
-    return NextResponse.json({
-      profiles: user.profiles || [],
-    })
   } catch (error) {
-    console.error("Database error:", error)
-    return NextResponse.json({ error: "Failed to fetch profiles" }, { status: 500 })
+    console.error("Error in profiles API:", error)
+    return NextResponse.json({
+      profiles: fallbackProfiles,
+      fallback: true,
+    })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession()
+    const session = await auth()
 
     if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      )
     }
 
-    const { name, avatar, isKid } = await request.json()
-
-    if (!name) {
-      return NextResponse.json({ error: "Profile name is required" }, { status: 400 })
+    const profileData = await request.json()
+    
+    // Validate profile data
+    if (!profileData.name) {
+      return NextResponse.json(
+        { error: "Profile name is required" },
+        { status: 400 }
+      )
     }
 
     const { db } = await connectToDatabase()
 
-    const user = await db.collection("users").findOne({
-      email: session.user.email,
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    // Check if user already has 5 profiles
-    const profiles = user.profiles || []
-    if (profiles.length >= 5) {
-      return NextResponse.json({ error: "Maximum number of profiles reached (5)" }, { status: 400 })
-    }
-
-    // Check if profile name already exists
-    if (profiles.some((profile: any) => profile.name === name)) {
-      return NextResponse.json({ error: "Profile name already exists" }, { status: 400 })
-    }
-
-    // Create new profile
     const newProfile = {
-      id: new ObjectId().toString(),
-      name,
-      avatar: avatar || `/avatars/avatar-${Math.floor(Math.random() * 8) + 1}.png`,
-      isKid: isKid || false,
+      userId: session.user.id,
+      name: profileData.name,
+      avatar: profileData.avatar || "/placeholder-user.jpg",
+      isKid: !!profileData.isKid,
       createdAt: new Date(),
     }
 
-    // Add profile to user's profiles
-    await db.collection("users").updateOne({ email: session.user.email }, { $push: { profiles: newProfile } })
+    // Check number of profiles (limit to 5)
+    const profileCount = await db
+      .collection("profiles")
+      .countDocuments({ userId: session.user.id })
+
+    if (profileCount >= 5) {
+      return NextResponse.json(
+        { error: "Maximum number of profiles (5) reached" },
+        { status: 400 }
+      )
+    }
+
+    const result = await db.collection("profiles").insertOne(newProfile)
 
     return NextResponse.json({
       success: true,
+      profileId: result.insertedId,
       profile: newProfile,
     })
   } catch (error) {
-    console.error("Database error:", error)
-    return NextResponse.json({ error: "Failed to create profile" }, { status: 500 })
-  }
-}
-
-export async function PUT(request: Request) {
-  try {
-    const session = await getServerSession()
-
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const { profileId, name, avatar, isKid } = await request.json()
-
-    if (!profileId) {
-      return NextResponse.json({ error: "Profile ID is required" }, { status: 400 })
-    }
-
-    const { db } = await connectToDatabase()
-
-    // Update profile
-    const result = await db.collection("users").updateOne(
-      {
-        email: session.user.email,
-        "profiles.id": profileId,
-      },
-      {
-        $set: {
-          "profiles.$.name": name,
-          "profiles.$.avatar": avatar,
-          "profiles.$.isKid": isKid,
-          "profiles.$.updatedAt": new Date(),
-        },
-      },
+    console.error("Error creating profile:", error)
+    return NextResponse.json(
+      { error: "Failed to create profile" },
+      { status: 500 }
     )
-
-    if (result.matchedCount === 0) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      updated: result.modifiedCount > 0,
-    })
-  } catch (error) {
-    console.error("Database error:", error)
-    return NextResponse.json({ error: "Failed to update profile" }, { status: 500 })
-  }
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const session = await getServerSession()
-
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const profileId = searchParams.get("profileId")
-
-    if (!profileId) {
-      return NextResponse.json({ error: "Profile ID is required" }, { status: 400 })
-    }
-
-    const { db } = await connectToDatabase()
-
-    // Remove profile from user's profiles
-    const result = await db
-      .collection("users")
-      .updateOne({ email: session.user.email }, { $pull: { profiles: { id: profileId } } })
-
-    if (result.matchedCount === 0) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      deleted: result.modifiedCount > 0,
-    })
-  } catch (error) {
-    console.error("Database error:", error)
-    return NextResponse.json({ error: "Failed to delete profile" }, { status: 500 })
   }
 }
